@@ -16,6 +16,8 @@ When you're troubleshooting different small variations, speed is key!
 
 ---
 # Basic Usage
+Start by changing the $adfilter / $entrafilter / $intunefilter to match any syntax utilizing regex.  I added an entire comment in the .ps1 file to explain how to go about creating a filter for your own environment. 
+
 To use the script, please run [***Get-ADEI -Update -OU "OU=UserAccounts,DC=your,DC=Domain"***] to get all your information first.  This will require Microsoft Graph and will automatically connect you to Device.Read.All, make sure you have authorization to connect!
 
 Once complete, you'll have 4 variables to run your own filtering on:
