@@ -69,13 +69,6 @@ function Get-ADEI {
         [switch]$Update,
         [String]$OU = $null,
         [switch]$help,
-        [parameter()]
-        [ValidateScript({
-            if (-not (Test-Path $_)) {
-                throw "The path '$_' does not exist. Please provide a valid directory path."
-            }
-            $true
-        })]
         [string]$export,
         [String]$Computer = $null
 
@@ -123,15 +116,15 @@ function Get-ADEI {
         ApproximateLastSignInDateTime
     #>
 
-    $ADfilter = {
+    $global:ADfilter = {
         
     }
 
-    $entrafilter = {
+    $global:entrafilter = {
       
     }
 
-    $intunefilter = {
+    $global:intunefilter = {
        
     }
 
@@ -161,8 +154,8 @@ function Get-ADEI {
         }
     }
 
-    # Sets $ADDevices
-    function Update-ADDevices {
+    # Sets $ADDevices / $EntraDevices / $IntuneDevices
+    function Update-Devices {
         Write-host "Retrieving Active Directory Computer Objects..." -ForegroundColor Cyan
         if (!$OU) {
             Write-host "-OU not set.  Searching entire Active Directory." -ForegroundColor Yellow
@@ -172,29 +165,23 @@ function Get-ADEI {
             Write-host "$OU" -ForegroundColor Yellow
             $Global:ADDevices = Get-ADComputer -Filter * -Properties * -SearchBase $OU
         }
+        Write-Host "`$ADDevices" -foregroundcolor white -BackgroundColor DarkBlue -nonewline
+        write-host " updated!" -ForegroundColor Green
 
-            $Global:ADDate = Get-Date
-            Write-Host "`$ADDevices" -foregroundcolor white -BackgroundColor DarkBlue -nonewline
-            write-host " updated!" -ForegroundColor Green
-    }
-        
-    # Sets $EntraDevices
-    function Update-EntraDevices {
         Write-Host "Retrieving Entra devices..." -ForegroundColor Cyan
         $Global:EntraDevices = Get-MGDevice -All | Where-Object { $_.OperatingSystem -eq "Windows" }
-        $Global:EntraDate = Get-Date
         Write-Host "`$EntraDevices" -foregroundcolor white -BackgroundColor DarkBlue -nonewline
         Write-host " updated!" -ForegroundColor Green
-    }
 
-    # Sets $IntuneDevices
-    function Update-IntuneDevices {
         Write-Host "Retrieving Intune Objects..." -ForegroundColor Cyan
         $Global:IntuneDevices = Get-MGDeviceManagementManagedDevice -All
-        $Global:IntuneDate = Get-Date
         Write-Host "`$IntuneDevices" -foregroundcolor white -BackgroundColor DarkBlue -nonewline
         Write-host " updated!" -ForegroundColor Green
+
+        $Global:SyncTime = Get-Date
+
     }
+        
 
     # 1. Main function that creates properties [AD, Entra, Intune] for [$ADDevices, $EntraDevices, $IntuneDevices]
         # The reason for the local variable is to be able to call $ADDevices easily without having to constantly connect to MSGraph / call AD.  This is good for troubleshooting speed as it's all loaded in memory.
@@ -202,6 +189,7 @@ function Get-ADEI {
     # 3. Creates $EntraDevicesBroken to remove any duplicates to avoid listing machines that are working.  More explained in the help file.
     # 4. Lists out how many machines are broken so you know what kind of situation you're in.
     function Compare-ADEI {
+        $global:EntraDevicesBroken = @()
 
         $ADDevices | add-member -notepropertyname "AD" -notepropertyvalue $true -force
         $ADDevices | add-member -notepropertyname "Entra" -notepropertyvalue $false -force
@@ -253,7 +241,7 @@ function Get-ADEI {
 
     }
 
-    $global:EntraDevicesBroken = @()
+
     $entraDevicesByDisplayName = $EntraDevices | Group-Object -Property DisplayName
 
     foreach ($group in $entraDevicesByDisplayName) {
@@ -262,91 +250,12 @@ function Get-ADEI {
 
         # If no entry in the group has Intune = $true, add all entries with Intune = $false to the result list
         if (-not $hasIntuneEntry) {
-            $EntraDevicesBroken += $group.Group | Where-Object { $_.Intune -eq $false }
+            $global:EntraDevicesBroken += $group.Group | Where-Object { $_.Intune -eq $false }
         }
     }
         
-
             Write-Progress -PercentComplete 100 -Activity "Comparison Complete" -Status "All devices processed"
 
-            write-host "Broken devices report:" 
-            Write-host "************************" 
-            write-host "Total " -nonewline -ForegroundColor Magenta
-            write-host "AD " -nonewline -ForegroundColor yellow
-            write-host "Devices: " -ForegroundColor Magenta -nonewline
-            write-host "$($ADDevices.count)" 
-    
-            write-host "Total " -nonewline -ForegroundColor Magenta
-            write-host "Entra " -nonewline -ForegroundColor Cyan
-            write-host "Devices: " -ForegroundColor Magenta -nonewline
-            write-host "$($EntraDevices.count)" 
-    
-            write-host "Total " -nonewline -ForegroundColor Magenta
-            write-host "Intune " -nonewline -ForegroundColor Green
-            write-host "Devices: " -ForegroundColor Magenta -nonewline
-            write-host "$($IntuneDevices.count)" 
-    
-            write-host ""
-            
-            Write-Host "In " -nonewline
-            write-host "AD" -ForegroundColor Yellow -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "Entra" -nonewline -ForegroundColor Cyan
-            write-host ": " -nonewline
-            write-host "$($ADDevices | where-object $adfilter | where-object {$_.Entra -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor Red
-    
-            Write-Host "In " -nonewline
-            write-host "AD" -ForegroundColor Yellow -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "Intune" -nonewline -ForegroundColor Green
-            write-host ": " -nonewline
-            write-host "$($ADDevices | where-object $adfilter | where-object {$_.Intune -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
-            write-host ""
-    
-            Write-Host "In " -nonewline
-            write-host "Entra" -ForegroundColor Cyan -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "AD" -nonewline -ForegroundColor Yellow
-            write-host ": " -nonewline
-            write-host "$($EntraDevices | where-object $entrafilter | where-object {$_.AD -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
-    
-            Write-Host "In " -nonewline
-            write-host "Entra" -ForegroundColor cyan -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "Intune" -nonewline -ForegroundColor Green
-            write-host ": " -nonewline
-            write-host "$($EntraDevicesBroken | where-object $entrafilter | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
-            write-host ""
-    
-            Write-Host "In " -nonewline
-            write-host "Intune" -ForegroundColor Green -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "AD" -nonewline -ForegroundColor Yellow
-            write-host ": " -nonewline
-            write-host "$($IntuneDevices | where-object $intunefilter | where-object {$_.AD -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
-    
-            Write-Host "In " -nonewline
-            write-host "Intune" -ForegroundColor Green -nonewline
-            write-host " | NOT " -nonewline 
-            write-host "Entra" -nonewline -ForegroundColor Cyan
-            write-host ": " -nonewline
-            write-host "$($IntuneDevices | where-object $intunefilter | where-object {$_.Entra -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
-            write-host ""
-    }
-
-    # Gets the last time each variable was set.
-    function Get-ADEICount {
-        Write-host "Last Sync Times:" -foregroundcolor Green
-        Write-Host "AD: " -foregroundcolor Green -nonewline
-        Write-Host "`t$($Global:ADDate.tostring("MM/dd/yy hh:mm tt"))" -foregroundcolor Magenta
-        Write-Host "Entra: " -foregroundcolor Green -nonewline
-        Write-Host "`t$($Global:EntraDate.tostring("MM/dd/yy hh:mm tt"))"-foregroundcolor Magenta
-        Write-Host "Intune: " -foregroundcolor Green -nonewline
-        Write-Host "$($Global:IntuneDate.tostring("MM/dd/yy hh:mm tt"))" -foregroundcolor Magenta
-        Write-Host ""
-        write-host "ADDevices Count: $($ADDevices.Count)" -ForegroundColor Yellow
-        write-host "EntraDevices Count: $($EntraDevices | where-object { $entrafilter } | measure-object | select-object -expandproperty Count)" -ForegroundColor Cyan
-        write-host "Intune Count: $($IntuneDevices.Count)" -ForegroundColor Green
     }
 
     # Checks each computer if it exists or is missing from AD, Entra, or Intune to quickly see where something is broken.
@@ -361,6 +270,11 @@ function Get-ADEI {
         $ADComputerGet = ($ADDevices | Where-Object name -eq "$ComputerName")
         $EntraComputerGet = ($EntraDevices | Where-Object DisplayName -eq "$ComputerName")
         $IntuneComputerGet = ($IntuneDevices | Where-Object DeviceName -eq "$ComputerName")
+
+        if ($null -eq $ADComputerGet -and $null -eq $EntraComputerGet -and $null -eq $IntuneComputerGet) {
+            write-host "Error: No computer exists by the name of $ComputerName." -ForegroundColor Red
+            return
+        }
 
         Write-host "Checking for $ComputerName`:" -ForegroundColor Magenta
         if ($null -eq $ADComputerGet) {
@@ -425,36 +339,113 @@ function Get-ADEI {
     function Export-ADEIReport {
         # Checks to see if the export filepath has a '\' at the end of it.  If it does not, add it.
         # C:\folder = C:\folder\
+
+        try {
+            get-childitem -path $export -erroraction stop | out-null
+        } catch {
+            write-host "The path [$export] does not exist.  Please enter a correct path." -ForegroundColor red
+            return
+            }
+        
         if ($export[-1] -ne '\') { 
             $export = "$export\" 
         }
+        
 
         $ADDevices | export-csv -path "${export}ADDevices.csv" -Verbose -notypeinformation
         $EntraDevices | export-csv -path "${export}EntraDevices.csv" -Verbose -NoTypeInformation
         $EntraDevicesBroken | export-csv -path "${export}EntraDevicesBroken.csv" -Verbose -NoTypeInformation
         $IntuneDevices | export-csv -path "${export}IntuneDevices.csv" -Verbose -NoTypeInformation
-        break
+        return
 
     }
+
+    function Get-ADEIReport {
+        Write-host "************************" -ForegroundColor yellow
+        write-host "Broken devices report:"
+        Write-host "************************" -ForegroundColor Yellow
+
+        Write-host "Last Sync Time: " -foregroundcolor Green -NoNewline
+        Write-Host "$($Global:ADDate.tostring("MM/dd/yy hh:mm tt"))" -foregroundcolor Magenta
+        Write-Host ""
+
+        write-host "Total " -nonewline -ForegroundColor Magenta
+        write-host "AD " -nonewline -ForegroundColor yellow
+        write-host "Devices: " -ForegroundColor Magenta -nonewline
+        write-host "$($ADDevices.count)" 
+
+        write-host "Total " -nonewline -ForegroundColor Magenta
+        write-host "Entra " -nonewline -ForegroundColor Cyan
+        write-host "Devices: " -ForegroundColor Magenta -nonewline
+        write-host "$($EntraDevices.count)" 
+
+        write-host "Total " -nonewline -ForegroundColor Magenta
+        write-host "Intune " -nonewline -ForegroundColor Green
+        write-host "Devices: " -ForegroundColor Magenta -nonewline
+        write-host "$($IntuneDevices.count)" 
+
+        write-host ""
+        
+        Write-Host "In " -nonewline
+        write-host "AD" -ForegroundColor Yellow -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "Entra" -nonewline -ForegroundColor Cyan
+        write-host ": " -nonewline
+        write-host "$($ADDevices | where-object $adfilter | where-object {$_.Entra -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor Red
+
+        Write-Host "In " -nonewline
+        write-host "AD" -ForegroundColor Yellow -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "Intune" -nonewline -ForegroundColor Green
+        write-host ": " -nonewline
+        write-host "$($ADDevices | where-object $adfilter | where-object {$_.Intune -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
+        write-host ""
+
+        Write-Host "In " -nonewline
+        write-host "Entra" -ForegroundColor Cyan -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "AD" -nonewline -ForegroundColor Yellow
+        write-host ": " -nonewline
+        write-host "$($EntraDevices | where-object $entrafilter | where-object {$_.AD -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
+
+        Write-Host "In " -nonewline
+        write-host "Entra" -ForegroundColor cyan -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "Intune" -nonewline -ForegroundColor Green
+        write-host ": " -nonewline
+        write-host "$($EntraDevicesBroken | where-object $entrafilter | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
+        write-host ""
+
+        Write-Host "In " -nonewline
+        write-host "Intune" -ForegroundColor Green -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "AD" -nonewline -ForegroundColor Yellow
+        write-host ": " -nonewline
+        write-host "$($IntuneDevices | where-object $intunefilter | where-object {$_.AD -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
+
+        Write-Host "In " -nonewline
+        write-host "Intune" -ForegroundColor Green -nonewline
+        write-host " | NOT " -nonewline 
+        write-host "Entra" -nonewline -ForegroundColor Cyan
+        write-host ": " -nonewline
+        write-host "$($IntuneDevices | where-object $intunefilter | where-object {$_.Entra -eq $false} | measure-object | select-object -ExpandProperty Count)" -ForegroundColor red
+        write-host ""
+    }
+
 
     if ($help) {
         Get-ADEIHelp
-        break
+        return
     }
 
-    if ($export) {
-        Export-ADEIReport
-        break
-    }
-    # Check for the -All switch, it doesn't exist, run if -[AD,Entra,Intune] flags exist and run each function as appropriately. 
+
     if ($Update) {
         $measuredtime = measure-command {
             write-host "Start time:"$(Get-Date -format "MM/dd/yyyy @ hh:mm:ss tt") -foregroundcolor Yellow
             Set-MSGraphConnection
-            Update-ADDevices
-            Update-EntraDevices
-            Update-IntuneDevices
+            Update-Devices
             Compare-ADEI
+            Get-ADEIReport
             write-host "End time:"$(Get-Date -format "MM/dd/yyyy @ hh:mm:ss tt") -foregroundcolor Yellow
     }
     write-host ("Total time ran: {0:D2}:{1:D2}:{2:D2}" -f $measuredtime.Hours, $measuredtime.Minutes, $measuredtime.Seconds) -foregroundcolor yellow
@@ -462,21 +453,24 @@ function Get-ADEI {
     }
 
 
-    # If no flags are set, just show the last sync time for each variable.  If $AD, $Entra, or $Intune have no data, and $Exists isn't called, 
-    if ($PSBoundParameters) {
-        if ($null -eq $Global:ADDate -or $null -eq $Global:ADDate -or $null -eq $Global:ADDate) {
-            write-host "Error: No data. Please run " -ForegroundColor red -nonewline
-            write-host "[Get-ADEI -All] " -nonewline
-            write-host "first." -ForegroundColor red
-            return
+    # If Sync Time never ran, then error out.
+    if ($null -eq $SyncTime) {
+        write-host "Error: No data. Please run [" -ForegroundColor red -nonewline
+        write-host "Get-ADEI -Update -OU `"OUPATHHERE`"" -nonewline
+        write-host "] first." -ForegroundColor red
+        return
+    }
+
+    if ($export) {
+        Export-ADEIReport
+        return
+    }
+
+    if ($Computer) {
+        Get-ADEISingle -ComputerName $Computer
+        return 
         }
 
-        if ($Computer) { 
-            Get-ADEISingle -ComputerName $Computer 
-            return 
-        }
-        
-    }
-    
-    Get-ADEICount
+    Get-ADEIReport
 }
+
