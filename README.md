@@ -1,5 +1,12 @@
 # Hybrid-Entra-Broken-Device-Finder
----
+
+<sub>***Upcoming Changes / To Do:***
+
+ - <sub>*Change the variables to a hash table to allow much faster queries*
+
+ - <sub>*Once hash tables are done, set it to query each variable into eachother instead of an AD --> Entra --> Intune Logic.*
+
+
 ## DESCRIPTION
 A PowerShell function that helps you check what devices are broken, and where, in a Hybrid environment by comparing Active Directory, Entra, and Intune and displaying filterable information.
 
